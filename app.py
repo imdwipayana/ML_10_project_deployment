@@ -10,6 +10,19 @@ import numpy as np
 import umap.umap_ as umap
 from sklearn.preprocessing import StandardScaler
 
+# Required imports for loading the pipeline
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.ensemble import RandomForestClassifier
+
+import joblib
+
+@st.cache_resource
+def load_model():
+    return joblib.load("random_forest_obesity.pkl")
+
+
 # -------------------------------------------------------------
 # 1️⃣ Streamlit Config
 # -------------------------------------------------------------
