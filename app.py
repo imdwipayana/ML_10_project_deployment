@@ -1,3 +1,4 @@
+# app.py
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -5,7 +6,8 @@ import seaborn as sns
 import joblib
 import umap
 import numpy as np
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, LabelBinarizer
+from sklearn.metrics import roc_curve, auc
 
 # =============================
 # CONFIGURATION
@@ -33,10 +35,13 @@ df = load_data()
 model = load_model()
 
 # =============================
-# SIDEBAR
+# SIDEBAR NAVIGATION
 # =============================
 st.sidebar.title("⚙️ Navigation")
-page = st.sidebar.radio("Go to:", ["📊 Data Exploration", "🌈 Visualization", "🤖 Model Prediction"])
+page = st.sidebar.radio(
+    "Go to:", 
+    ["📊 Data Exploration", "🌈 Visualization", "🤖 Model Prediction"]
+)
 
 # =============================
 # PAGE 1: DATA EXPLORATION
@@ -88,16 +93,19 @@ elif page == "🌈 Visualization":
     # ---- Correlation Heatmap ----
     with tab2:
         st.subheader("Correlation Heatmap")
-        corr = df[numeric_cols].corr()
-        fig, ax = plt.subplots(figsize=(8,6))
-        sns.heatmap(corr, annot=True, fmt=".2f", cmap="coolwarm", cbar_kws={'label': 'Correlation'}, ax=ax)
-        ax.set_title("Correlation Matrix", fontsize=14, fontweight="bold")
-        st.pyplot(fig)
+        if len(numeric_cols) >= 2:
+            corr = df[numeric_cols].corr()
+            fig, ax = plt.subplots(figsize=(8,6))
+            sns.heatmap(corr, annot=True, fmt=".2f", cmap="coolwarm", cbar_kws={'label': 'Correlation'}, ax=ax)
+            ax.set_title("Correlation Matrix", fontsize=14, fontweight="bold")
+            st.pyplot(fig)
+        else:
+            st.warning("Not enough numeric features for correlation heatmap.")
 
     # ---- UMAP Projection ----
     with tab3:
         st.subheader("UMAP Projection")
-        if len(numeric_cols) > 1:
+        if len(numeric_cols) >= 2:
             reducer = umap.UMAP(n_neighbors=15, min_dist=0.1, random_state=42)
             scaled_data = StandardScaler().fit_transform(df[numeric_cols])
             embedding = reducer.fit_transform(scaled_data)
@@ -114,38 +122,30 @@ elif page == "🌈 Visualization":
 # =============================
 # PAGE 3: MODEL PREDICTION
 # =============================
-from sklearn.preprocessing import LabelBinarizer
-from sklearn.metrics import roc_curve, auc
-
-
 elif page == "🤖 Model Prediction":
     st.title("🤖 Obesity Level Prediction")
     st.write("Provide feature values to predict the obesity class.")
 
-    # Create input form
     feature_inputs = {}
     for col in df.columns:
         if df[col].dtype == 'object':
             feature_inputs[col] = st.selectbox(f"{col}", sorted(df[col].unique()))
         else:
-            feature_inputs[col] = st.number_input(f"{col}", float(df[col].min()), float(df[col].max()), float(df[col].mean()))
+            feature_inputs[col] = st.number_input(
+                f"{col}", float(df[col].min()), float(df[col].max()), float(df[col].mean())
+            )
 
     if st.button("Predict"):
         input_df = pd.DataFrame([feature_inputs])
         try:
-            # Prediction
+            # Prediction & probabilities
             prediction = model.predict(input_df)[0]
             probabilities = model.predict_proba(input_df)[0]
-
-            # Class labels
-            if hasattr(model, "classes_"):
-                class_labels = model.classes_
-            else:
-                class_labels = [f"Class {i}" for i in range(len(probabilities))]
+            class_labels = model.classes_ if hasattr(model, "classes_") else [f"Class {i}" for i in range(len(probabilities))]
 
             st.success(f"🎯 Predicted Obesity Class: **{prediction}**")
 
-            # Show probabilities in a table
+            # Probabilities table
             prob_df = pd.DataFrame({
                 "Class": class_labels,
                 "Probability": np.round(probabilities, 3)
@@ -153,14 +153,12 @@ elif page == "🤖 Model Prediction":
             st.subheader("Class Probabilities")
             st.dataframe(prob_df)
 
-            # Optionally, ROC curve (precomputed)
-            if len(class_labels) <= 7 and "Target" in df.columns:
-                # Prepare y_true for ROC
+            # ROC Curve (for reference on full dataset)
+            if "Target" in df.columns and len(class_labels) <= 7:
                 lb = LabelBinarizer()
                 y_true = lb.fit_transform(df["Target"])
                 y_score = model.predict_proba(df.drop(columns=["Target"]))
 
-                # Plot ROC per class
                 fig, ax = plt.subplots(figsize=(6,5))
                 for i, cls in enumerate(lb.classes_):
                     fpr, tpr, _ = roc_curve(y_true[:, i], y_score[:, i])
